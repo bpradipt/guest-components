@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - "slsa"
     paths:
       - 'attestation-agent/**'
       - '.github/workflows/aa_slsa.yml'
@@ -20,7 +21,7 @@ on:
 
 jobs:
   build:
-    name: Check
+    name: Build attestation-agent
     defaults:
       run:
         working-directory: ./attestation-agent
@@ -77,14 +78,22 @@ jobs:
         id: hash
         run: |
           set -euo pipefail
-          echo "hashes=$(sha256sum /usr/local/bin/attestation-agent | base64 -w0)" >> "$GITHUB_OUTPUT"      
+          echo "hashes=$(sha256sum /usr/local/bin/attestation-agent | base64 -w0)" >> "$GITHUB_OUTPUT"
+      
+        # Upload attestation-agent binary as tarball
+      - name: Upload attestation-agent binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: attestation-agent
+          path: /usr/local/bin/attestation-agent      
+                
   provenance:
     needs: [build]
     permissions:
       actions: read # To read the workflow path.
       id-token: write # To sign the provenance.
       contents: write # To add assets to a release.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.7.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
     with:
       base64-subjects: "${{ needs.build.outputs.hashes }}"
       upload-assets: true # Optional: Upload to a new release
