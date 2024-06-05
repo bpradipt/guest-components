@@ -1,0 +1,90 @@
+name: attestation-agent basic build and SLSA provenance 
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - 'attestation-agent/**'
+      - '.github/workflows/aa_slsa.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    paths:
+      - 'attestation-agent/**'
+      - '.github/workflows/aa_slsa.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  create:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Check
+    defaults:
+      run:
+        working-directory: ./attestation-agent
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        rust:
+          - stable
+    outputs:
+        hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Rust toolchain (${{ matrix.rust }})
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: rustfmt, clippy
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install TDX dependencies
+        run: |
+          sudo curl -sL https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | sudo gpg --dearmor --output /usr/share/keyrings/intel-sgx.gpg
+          sudo echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx.gpg] https://download.01.org/intel-sgx/sgx_repo/ubuntu jammy main' | sudo tee /etc/apt/sources.list.d/intel-sgx.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libtdx-attest-dev
+
+      - name: Install TPM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libtss2-dev
+
+      - name: Install dm-verity dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdevmapper-dev
+
+      - name: Gnu build && install with ttrpc
+        # Installed in /usr/local/bin/attestation-agent
+        run: |
+          make ttrpc=true && make install
+
+        # Generate the subject.
+      - name: Generate subject
+        id: hash
+        run: |
+          set -euo pipefail
+          echo "hashes=$(sha256sum /usr/local/bin/attestation-agent | base64 -w0)" >> "$GITHUB_OUTPUT"      
+  provenance:
+    needs: [build]
+    permissions:
+      actions: read # To read the workflow path.
+      id-token: write # To sign the provenance.
+      contents: write # To add assets to a release.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.7.0
+    with:
+      base64-subjects: "${{ needs.build.outputs.hashes }}"
+      upload-assets: true # Optional: Upload to a new release
