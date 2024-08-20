@@ -21,6 +21,76 @@ use std::{
 };
 use tokio::{fs, io::AsyncRead};
 use tokio_tar::ArchiveBuilder;
+use tokio_tar::Header;
+
+const WHITEOUT_PREFIX: &str = ".wh.";
+const WHITEOUT_OPAQUE_DIR: &str = ".wh..wh..opq";
+
+#[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+fn convert_whiteout(path: &Path, header: &Header, destination: &Path) -> Result<bool> {
+    Ok(true)
+}
+
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos"))]
+use anyhow::anyhow;
+
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos"))]
+fn convert_whiteout(path: &Path, header: &Header, destination: &Path) -> Result<bool> {
+    // Handle whiteout conversion
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_str()
+        .ok_or(anyhow!("Invalid unicode in whiteout path: {:?}", path))?;
+
+    if name.starts_with(WHITEOUT_PREFIX) {
+        let parent = path
+            .parent()
+            .ok_or(anyhow!("Invalid whiteout parent for path: {:?}", path))?;
+
+        if name == WHITEOUT_OPAQUE_DIR {
+            let destination_parent = destination.join(parent);
+            xattr::set(destination_parent, "trusted.overlay.opaque", b"y")?;
+            return Ok(false);
+        }
+
+        let original_name = name
+            .strip_prefix(WHITEOUT_PREFIX)
+            .ok_or(anyhow!("Failed to strip whiteout prefix for: {}", name))?;
+        let original_path = parent.join(original_name);
+        let path = CString::new(format!(
+            "{}/{}",
+            destination.display(),
+            original_path.display()
+        ))?;
+
+        let ret = unsafe { nix::libc::mknod(path.as_ptr(), nix::libc::S_IFCHR, 0) };
+        if ret != 0 {
+            bail!("mknod: {:?} error: {:?}", path, io::Error::last_os_error());
+        }
+
+        let uid: nix::libc::uid_t = header
+            .uid()?
+            .try_into()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "UID is too large!"))?;
+        let gid: nix::libc::gid_t = header
+            .gid()?
+            .try_into()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "GID is too large!"))?;
+
+        let ret = unsafe { nix::libc::lchown(path.as_ptr(), uid, gid) };
+        if ret != 0 {
+            bail!(
+                "change ownership: {:?} error: {:?}",
+                path,
+                io::Error::last_os_error()
+            );
+        }
+        return Ok(false);
+    }
+
+    Ok(true)
+}
 
 /// Unpack the contents of tarball to the destination path
 pub async fn unpack<R: AsyncRead + Unpin>(input: R, destination: &Path) -> Result<()> {
@@ -59,6 +129,10 @@ pub async fn unpack<R: AsyncRead + Unpin>(input: R, destination: &Path) -> Resul
             .gid()?
             .try_into()
             .context("GID is too large!")?;
+
+        if !convert_whiteout(&file.path()?, file.header(), destination)? {
+            continue;
+        }
 
         file.unpack_in(destination).await?;
 
@@ -177,6 +251,7 @@ async fn set_perms_ownerships(
 mod tests {
     use std::os::unix::fs::{chown, lchown, MetadataExt};
 
+    use std::os::unix::fs::FileTypeExt;
     use tokio::{
         fs::{self, File},
         io::AsyncWriteExt,
@@ -213,11 +288,36 @@ mod tests {
             .await
             .unwrap();
 
+        let path = tempdir
+            .path()
+            .join(WHITEOUT_PREFIX.to_owned() + "whiteout_file.txt");
+        File::create(&path).await.unwrap();
+        ar.append_file(
+            WHITEOUT_PREFIX.to_owned() + "whiteout_file.txt",
+            &mut File::open(&path).await.unwrap(),
+        )
+        .await
+        .unwrap();
+
         let path = tempdir.path().join("dir");
         fs::create_dir(&path).await.unwrap();
 
         filetime::set_file_mtime(&path, mtime).unwrap();
         ar.append_path_with_name(&path, "dir").await.unwrap();
+
+        let path = tempdir.path().join("whiteout_dir");
+        fs::create_dir(&path).await.unwrap();
+        ar.append_path_with_name(&path, "whiteout_dir")
+            .await
+            .unwrap();
+
+        let path = tempdir
+            .path()
+            .join("whiteout_dir/".to_owned() + WHITEOUT_OPAQUE_DIR);
+        fs::create_dir(&path).await.unwrap();
+        ar.append_path_with_name(&path, "whiteout_dir/".to_owned() + WHITEOUT_OPAQUE_DIR)
+            .await
+            .unwrap();
 
         // TODO: Add more file types like symlink, char, block devices.
         let data = ar.into_inner().await.unwrap();
@@ -244,10 +344,22 @@ mod tests {
         assert_eq!(metadata.gid(), 10);
         assert_eq!(metadata.uid(), 10);
 
+        if cfg!(target_os = "linux") || cfg!(target_os = "freebsd") || cfg!(target_os = "macos") {
+            let path = destination.join("whiteout_file.txt");
+            let metadata = fs::metadata(path).await.unwrap();
+            assert!(metadata.file_type().is_char_device());
+        }
+
         let path = destination.join("dir");
         let metadata = fs::metadata(path).await.unwrap();
         let new_mtime = filetime::FileTime::from_last_modification_time(&metadata);
         assert_eq!(mtime, new_mtime);
+
+        if cfg!(target_os = "linux") || cfg!(target_os = "freebsd") || cfg!(target_os = "macos") {
+            let path = destination.join("whiteout_dir");
+            let opaque = xattr::get(path, "trusted.overlay.opaque").unwrap().unwrap();
+            assert_eq!(opaque, b"y");
+        }
 
         // though destination already exists, it will be deleted
         // and rewrite
