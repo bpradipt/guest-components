@@ -41,6 +41,7 @@ tss-esapi = { version = "7.5" }
 openssl.workspace = true
 rsa = { version = "0.9.6", features = ["pkcs5", "sha2"]}
 num-traits = { version = "0.2" }
+env_logger = "0.11"
 
 [dev-dependencies]
 tokio.workspace = true
