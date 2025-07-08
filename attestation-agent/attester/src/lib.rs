@@ -42,6 +42,9 @@ pub mod tsm_report;
 #[cfg(feature = "se-attester")]
 pub mod se;
 
+pub mod tpm;
+pub mod tpm_utils;
+
 pub(crate) type BoxedAttester = Box<dyn Attester + Send + Sync>;
 
 impl TryFrom<Tee> for BoxedAttester {
@@ -67,6 +70,8 @@ impl TryFrom<Tee> for BoxedAttester {
             Tee::Csv => Box::<csv::CsvAttester>::default(),
             #[cfg(feature = "se-attester")]
             Tee::Se => Box::<se::SeAttester>::default(),
+            #[cfg(feature = "tpm-attester")]
+            Tee::Tpm => Box::<tpm::TpmAttester>::default(),
             _ => bail!("TEE is not supported!"),
         };
 
@@ -152,6 +157,12 @@ pub fn detect_tee_type() -> Tee {
         return Tee::Se;
     }
 
+    // TPM attester detection
+    #[cfg(feature = "tpm-attester")]
+    if tpm::detect_platform() {
+        return Tee::Tpm;
+    }
+
     log::warn!(
         "No TEE platform detected. Sample Attester will be used.
          If you are expecting to collect evidence from inside a confidential guest,
@@ -208,6 +219,13 @@ impl CompositeAttester {
         for tee in additional_tees {
             additional_attesters.insert(tee, tee.try_into()?);
         }
+
+        // Log the primary TEE type and additional attesters.
+        log::info!(
+            "Detected primary TEE type: {:?}, additional attesters: {:?}",
+            primary_tee,
+            additional_attesters.keys()
+        );
 
         Ok(Self {
             primary_attester_type: primary_tee,
@@ -299,6 +317,12 @@ impl CompositeAttester {
         for (tee, attester) in &self.additional_attesters {
             evidence.insert(*tee, attester.get_evidence(report_data.clone()).await?);
         }
+
+        // Log the collected evidence from additional attesters.
+        log::debug!(
+            "Collected evidence from additional attesters: {:?}",
+            evidence.keys()
+        );
 
         Ok(evidence)
     }

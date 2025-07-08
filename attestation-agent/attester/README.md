@@ -26,3 +26,36 @@ echo $EVIDENCE_STRING | ../../target/release/evidence_getter
 ```
 
 Here, `$EVIDENCE_STRING` is a string/bytes of up to 64 bytes.
+
+## Adding TPM quote to evidence
+
+Setup a TPM emulator by running the following commands:
+
+```sh
+sudo modprobe tpm_vtpm_proxy
+mkdir -p /tmp/tpmdir
+s​​wtpm_setup --tpm2 --tpmstate /tmp/tpmdir --createek --decryption --create-ek-cert     --create-platform-cert --pcr-banks - --display
+
+swtpm chardev --tpmstate dir=/tmp/tpmdir --vtpm-proxy --tpm2 -d --log file=/tmp/tpmdir/tpm.log,level=20 --flags not-need-init
+```
+
+This will create a tpm device for example `/dev/tpm1`
+
+If you want to read and extend sample PCRs for test you can use the following commands:
+
+```sh
+# Read all PCRs
+tpm2_pcrread -T device:/dev/tpm1
+
+# Read PCR an empty PCR (eg 10)
+tpm2_pcrread sha256:10 -T device:/dev/tpm1
+
+# Extend PCR
+tpm2_pcrextend 10:sha256=6ea40aa7267bb71251c1de1c3605a3df759b86b22fa9f62aa298d4197cd88a3
+```
+
+For retrieving TPM quote, run the following:
+
+```sh
+../../target/release/evidence_getter commandline 12345678
+```

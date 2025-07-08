@@ -49,8 +49,18 @@ async fn main() {
     }
 
     let evidence = attester
-        .primary_evidence(report_data)
+        .primary_evidence(report_data.clone())
         .await
         .expect("get evidence failed");
     println!("{evidence}");
+
+    // Print additional evidence if available
+    let additional_evidence = attester
+        .additional_evidence(report_data)
+        .await
+        .expect("get composite evidence failed");
+    // Print the additional evidence which is a HashMap
+    for (key, value) in additional_evidence {
+        println!("{:?}: {}", key, value);
+    }
 }

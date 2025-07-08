@@ -15,7 +15,7 @@ clap = { workspace = true, features = ["derive"], optional = true }
 crypto = { path = "../deps/crypto", default-features = false }
 env_logger = { workspace = true, optional = true }
 jwt-simple.workspace = true
-kbs-types.workspace = true
+kbs-types = "0.12.0"
 log.workspace = true
 protobuf = { workspace = true, optional = true }
 reqwest = { workspace = true, features = ["cookies", "json"], optional = true }
@@ -61,6 +61,7 @@ snp-attester = ["attester/snp-attester"]
 csv-attester = ["attester/csv-attester"]
 cca-attester = ["attester/cca-attester"]
 se-attester = ["attester/se-attester"]
+tpm-attester = ["attester/tpm-attester"]
 
 rust-crypto = ["reqwest/rustls-tls", "crypto/rust-crypto"]
 openssl = ["reqwest/native-tls-vendored", "crypto/openssl"]
