@@ -358,7 +358,7 @@ dependencies = [
  "crypto",
  "env_logger",
  "hex",
- "kbs-types 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kbs-types",
  "kbs_protocol",
  "log",
  "prost 0.13.5",
@@ -399,7 +399,7 @@ dependencies = [
  "hyper 0.14.32",
  "hyper-tls 0.5.0",
  "iocuddle",
- "kbs-types 0.12.0 (git+https://github.com/bpradipt/kbs-types?rev=879265c4789618d5eea7ae371462e9ac74cf3892)",
+ "kbs-types",
  "log",
  "num-traits",
  "occlum_dcap",
@@ -1473,7 +1473,7 @@ dependencies = [
  "base64 0.22.1",
  "concat-kdf",
  "ctr",
- "kbs-types 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kbs-types",
  "openssl",
  "p256",
  "rand 0.8.5",
@@ -3446,18 +3446,6 @@ dependencies = [
 [[package]]
 name = "kbs-types"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2be9fa1f64b3c8da5043cdc634007c6f7444b3ef1f3668f66b34180bdb398ec7"
-dependencies = [
- "base64 0.22.1",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "kbs-types"
-version = "0.12.0"
 source = "git+https://github.com/bpradipt/kbs-types?rev=879265c4789618d5eea7ae371462e9ac74cf3892#879265c4789618d5eea7ae371462e9ac74cf3892"
 dependencies = [
  "base64 0.22.1",
@@ -3478,7 +3466,7 @@ dependencies = [
  "crypto",
  "env_logger",
  "jwt-simple",
- "kbs-types 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "kbs-types",
  "log",
  "protobuf 3.7.1",
  "reqwest 0.12.22",

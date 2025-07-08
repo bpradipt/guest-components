@@ -68,3 +68,6 @@ ttrpc-codegen = "0.5.0"
 url = "2.5.4"
 uuid = "1"
 zeroize = "1.5.7"
+
+[patch.crates-io]
+kbs-types = { git = "https://github.com/bpradipt/kbs-types", rev = "879265c4789618d5eea7ae371462e9ac74cf3892" }
