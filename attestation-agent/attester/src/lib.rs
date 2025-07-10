@@ -186,6 +186,8 @@ pub fn detect_attestable_devices() -> Vec<Tee> {
     if sample_device::detect_platform() {
         additional_devices.push(Tee::SampleDevice);
     }
+    // TBD: Should we add TPM as additional device here
+    // if primary TEE is not vTPM based (eg. AzTdxVtpm, AzSnpVtpm, etc.)?
 
     additional_devices
 }
