@@ -22,8 +22,8 @@ pub struct Evidence {
 pub struct TpmAttester;
 
 pub fn detect_platform() -> bool {
-    // TPM attester is available if /dev/tpm0 or /dev/tpm1 exists
-    std::path::Path::new("/dev/tpm0").exists() || std::path::Path::new("/dev/tpm1").exists()
+    // Return true if TPM device is detected    
+    detect_tpm_device().is_some()
 }
 
 #[async_trait::async_trait]
