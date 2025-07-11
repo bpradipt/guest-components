@@ -12,13 +12,13 @@ use rsa as rust_rsa;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::str::FromStr;
-use tss_esapi::abstraction::{
+use tss_esapi::{abstraction::{
     ak::{create_ak, load_ak},
     ek::{create_ek_object, retrieve_ek_pubcert},
     pcr,
     public::DecodedKey,
     AsymmetricAlgorithmSelection, DefaultKey,
-};
+}, structures::HashScheme};
 use tss_esapi::attributes::SessionAttributesBuilder;
 use tss_esapi::constants::SessionType;
 use tss_esapi::handles::PcrHandle;
@@ -29,7 +29,7 @@ use tss_esapi::interface_types::key_bits::RsaKeyBits;
 use tss_esapi::structures::digest_values::DigestValues;
 use tss_esapi::structures::{
     pcr_selection_list::PcrSelectionListBuilder, pcr_slot::PcrSlot, AttestInfo, PcrSelectionList,
-    Private, Public, Signature, SignatureScheme, SymmetricDefinition,
+    Private, Public, Signature, SignatureScheme as TpmSignatureScheme, SymmetricDefinition,
 };
 use tss_esapi::tcti_ldr::{DeviceConfig, TctiNameConf};
 use tss_esapi::traits::Marshall;
@@ -219,7 +219,9 @@ pub fn get_quote(
         .quote(
             ak_handle,
             report_data.to_vec().try_into()?,
-            SignatureScheme::Null,
+            TpmSignatureScheme::RsaSsa {
+                hash_scheme: HashScheme::new(HashingAlgorithm::Sha256),
+            },
             selection_list.clone(),
         )
         .context("TPM Quote API call failed")?;
@@ -307,4 +309,4 @@ pub fn detect_tpm_device() -> Option<String> {
     }
     log::warn!("No TPM device detected (checked TPM_DEVICE env, /dev/tpm0, and /dev/tpm1)");
     None
-} 
+}
