@@ -229,7 +229,7 @@ pub fn get_quote(
     let AttestInfo::Quote { .. } = attest.attested() else {
         bail!("Get Quote failed");
     };
-    let Signature::RsaSsa(rsa_sig) = signature.clone() else {
+    let Signature::RsaSsa(_) = signature.clone() else {
         bail!("Wrong Signature");
     };
 
@@ -238,7 +238,7 @@ pub fn get_quote(
     drop(context);
 
     Ok(TpmQuote {
-        signature: engine.encode(rsa_sig.signature().to_vec()),
+        signature: engine.encode(signature.marshall()?),
         message: engine.encode(attest.marshall()?),
         pcrs: read_all_pcrs(pcr_algorithm)?,
     })
