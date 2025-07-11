@@ -8,6 +8,7 @@ use anyhow::*;
 use base64::Engine;
 use log::info;
 use serde::{Deserialize, Serialize};
+use tss_esapi::traits::Marshall;
 use crate::tpm_utils::{TpmQuote, generate_rsa_ak, get_quote, extend_pcr, read_all_pcrs, detect_tpm_device};
 
 /// Evidence structure for the TPM Attester.
@@ -16,6 +17,7 @@ pub struct Evidence {
     pub svn: String,
     pub report_data: String,
     pub tpm_quote: TpmQuote,
+    pub ak_public: String,
 }
 
 #[derive(Debug, Default)]
@@ -39,11 +41,13 @@ impl Attester for TpmAttester {
             &report_data
         };
         let attestation_key = generate_rsa_ak()?;
+        let public = attestation_key.ak_public.marshall()?;
         let tpm_quote = get_quote(attestation_key, data, "SHA256")?;
         let evidence = Evidence {
             svn: "1".to_string(),
             report_data: base64::engine::general_purpose::STANDARD.encode(data),
             tpm_quote,
+            ak_public: base64::engine::general_purpose::STANDARD.encode(public),
         };
         Ok(serde_json::to_value(&evidence)?)
     }
