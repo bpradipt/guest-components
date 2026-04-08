@@ -8,8 +8,15 @@ license = "Apache-2.0"
 authors = ["The image-rs Authors"]
 edition = "2021"
 
+[[bin]]
+name = "pull_debug"
+path = "src/bin/pull_debug.rs"
+required-features = ["pull-debug-bin", "oci-client-rustls", "signature-cosign-rustls"]
+
 [dependencies]
 anyhow.workspace = true
+clap = { workspace = true, features = ["derive"], optional = true }
+env_logger = { workspace = true, optional = true }
 async-compression = { version = "0.4.37", features = [
     "futures-io",
     "tokio",
@@ -79,6 +86,10 @@ test-utils = { path = "libs/test-utils" }
 tokio = { workspace = true, features = ["process"] }
 
 [features]
+# Enables the pull_debug standalone binary; activates clap, env_logger, and
+# the tokio multi-thread runtime required by #[tokio::main].
+pull-debug-bin = ["dep:clap", "dep:env_logger", "tokio/rt-multi-thread", "tokio/macros"]
+
 default = [
     "signature-cosign-rustls",
     "keywrap-grpc",
