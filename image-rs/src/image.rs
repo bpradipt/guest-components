@@ -27,7 +27,7 @@ use crate::signature::SignatureValidator;
 use crate::snapshots::{SnapshotType, Snapshotter};
 use crate::{auth::Auth, registry::RegistryHandler};
 use crate::{
-    bundle::{create_runtime_config, BUNDLE_ROOTFS},
+    bundle::{create_runtime_config, BUNDLE_CONFIG, BUNDLE_ROOTFS},
     pull::PullLayerError,
 };
 use crate::{
@@ -271,11 +271,30 @@ impl ImageClient {
             }],
         };
 
+        // Release the read lock before calling create_bundle (which needs
+        // &mut self.snapshot) to avoid holding the lock across an overlay mount.
+        let cached = {
+            let m = self.meta_store.read().await;
+            m.reference_db
+                .get(image_url)
+                .and_then(|id| m.image_db.get(id))
+                .cloned()
+        };
+        if let Some(image_data) = cached {
+            info!("Image {image_url} found in local cache, creating bundle");
+            let image_id = create_bundle(&image_data, bundle_dir, &mut self.snapshot)
+                .map_err(|source| PullImageError::FailedToCreateBundle { source })?;
+            return Ok(ImageInfo {
+                config_digest: image_id,
+                manifest_digest: image_data.digest.clone(),
+            });
+        }
+
         let mut tried_images_and_errors = Vec::new();
         for task in tasks {
             let task_image_url = task.image_reference.to_string();
             match self
-                .pull_task(task, auth_info, bundle_dir, decrypt_config, &task_image_url)
+                .pull_task(task, auth_info, bundle_dir, decrypt_config, &task_image_url, image_url)
                 .await
             {
                 Ok(image_id) => return Ok(image_id),
@@ -299,6 +318,7 @@ impl ImageClient {
         bundle_dir: &Path,
         decrypt_config: &Option<&str>,
         image_url: &str,
+        original_image_url: &str,
     ) -> PullImageResult<ImageInfo> {
         // Try to find a valid registry auth. Logic order
         // 1. the input parameter
@@ -388,16 +408,40 @@ impl ImageClient {
         let id = image_manifest.config.digest.clone();
 
         // If image has already been populated, just create the bundle.
-        {
+        // Release the read lock before calling create_bundle (which needs &mut self.snapshot)
+        // and before acquiring the write lock to backfill reference_db.
+        let cached_image_data = {
             let m = self.meta_store.read().await;
-            if let Some(image_data) = &m.image_db.get(&id) {
-                let image_id = create_bundle(image_data, bundle_dir, &mut self.snapshot)
-                    .map_err(|source| PullImageError::FailedToCreateBundle { source })?;
-                return Ok(ImageInfo {
-                    config_digest: image_id.clone(),
-                    manifest_digest: image_digest.clone(),
-                });
+            m.image_db.get(&id).cloned()
+        };
+        if let Some(image_data) = cached_image_data {
+            let image_id = if bundle_dir.join(BUNDLE_CONFIG).exists() {
+                // Bundle already exists; nothing to create.
+                id.clone()
+            } else {
+                create_bundle(&image_data, bundle_dir, &mut self.snapshot)
+                    .map_err(|source| PullImageError::FailedToCreateBundle { source })?
+            };
+            // Backfill reference_db so future runs skip the network round-trip.
+            let meta_file = self
+                .config
+                .work_dir
+                .join(METAFILE)
+                .to_string_lossy()
+                .to_string();
+            {
+                let mut ms = self.meta_store.write().await;
+                ms.reference_db
+                    .entry(original_image_url.to_string())
+                    .or_insert_with(|| id.clone());
+                ms.write_to_file(&meta_file)
+                    .context("update meta store failed")
+                    .map_err(|source| PullImageError::Internal { source })?;
             }
+            return Ok(ImageInfo {
+                config_digest: image_id,
+                manifest_digest: image_digest.clone(),
+            });
         }
 
         #[cfg(feature = "signature")]
@@ -449,11 +493,13 @@ impl ImageClient {
             .map_err(|source| PullImageError::FailedToCreateBundle { source })?;
 
         debug!("image id: {image_id}");
-        self.meta_store
-            .write()
-            .await
-            .image_db
-            .insert(image_data.id.clone(), image_data.clone());
+        {
+            let mut ms = self.meta_store.write().await;
+            ms.image_db
+                .insert(image_data.id.clone(), image_data.clone());
+            ms.reference_db
+                .insert(original_image_url.to_string(), image_data.id.clone());
+        }
 
         let meta_file = self
             .config

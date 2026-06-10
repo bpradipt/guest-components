@@ -19,6 +19,11 @@ pub struct MetaStore {
 
     // snapshot_db holds map of snapshot with work dir index.
     pub snapshot_db: HashMap<String, usize>,
+
+    // reference_db maps image reference strings to config digests,
+    // enabling cache lookups without contacting the registry.
+    #[serde(default)]
+    pub reference_db: HashMap<String, String>,
 }
 
 impl TryFrom<&Path> for MetaStore {
