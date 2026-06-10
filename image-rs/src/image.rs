@@ -499,6 +499,15 @@ impl ImageClient {
                 .insert(image_data.id.clone(), image_data.clone());
             ms.reference_db
                 .insert(original_image_url.to_string(), image_data.id.clone());
+            // Also record the manifest-digest form so that callers which resolve
+            // the tag to a digest before calling pull_image (e.g. kata-agent via
+            // containerd) hit the reference_db fast path on the next call.
+            if let Ok(r) = Reference::try_from(original_image_url) {
+                let digest_ref = format!("{}/{}@{}", r.registry(), r.repository(), image_digest);
+                ms.reference_db
+                    .entry(digest_ref)
+                    .or_insert_with(|| image_data.id.clone());
+            }
         }
 
         let meta_file = self
